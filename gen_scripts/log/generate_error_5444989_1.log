@@ -1,0 +1,28 @@
+Error output test
+2024-05-06 18:17:24.004369: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcuda.so.1
+2024-05-06 18:17:24.149799: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1561] Found device 0 with properties: 
+pciBusID: 0000:81:00.0 name: NVIDIA A40 computeCapability: 8.6
+coreClock: 1.74GHz coreCount: 84 deviceMemorySize: 44.34GiB deviceMemoryBandwidth: 648.29GiB/s
+2024-05-06 18:17:24.174429: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudart.so.10.1
+2024-05-06 18:17:24.315739: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcublas.so.10
+2024-05-06 18:17:24.458936: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcufft.so.10
+2024-05-06 18:17:24.492160: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcurand.so.10
+2024-05-06 18:17:24.629196: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcusolver.so.10
+2024-05-06 18:17:24.657530: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcusparse.so.10
+2024-05-06 18:17:25.027503: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudnn.so.7
+2024-05-06 18:17:25.034491: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1703] Adding visible gpu devices: 0
+Using TensorFlow backend.
+Traceback (most recent call last):
+  File "worker.py", line 110, in <module>
+    wirehead_runtime.run_generator()
+  File "/data/users1/mdoan4/wirehead/wirehead/Runtime.py", line 225, in run_generator
+    self.generate_and_insert(dbw, dbc, chunksize)
+  File "/data/users1/mdoan4/wirehead/wirehead/Runtime.py", line 202, in generate_and_insert
+    data = next(self.generator)
+  File "worker.py", line 49, in create_generator
+    brain_generator = BrainGenerator(PATH_TO_DATA + training_seg)
+  File "/data/users1/mdoan4/wirehead/dependencies/synthseg/SynthSeg/brain_generator.py", line 197, in __init__
+    self.labels_paths = utils.list_images_in_folder(labels_dir)
+  File "/data/users1/mdoan4/wirehead/dependencies/synthseg/ext/lab2im/utils.py", line 406, in list_images_in_folder
+    assert os.path.isfile(path_dir), 'file %s does not exist' % path_dir
+AssertionError: file /data/users1/mdoan4/babywire/babytrainingdatalabeling2_inf10_final4.nii.gz does not exist

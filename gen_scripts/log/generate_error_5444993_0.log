@@ -1,0 +1,11 @@
+Error output test
+Traceback (most recent call last):
+  File "worker.py", line 108, in <module>
+    wirehead_runtime.run_manager()
+  File "/data/users1/mdoan4/wirehead/wirehead/Runtime.py", line 49, in run_manager
+    generated = self.watch_and_swap(generated)
+  File "/data/users1/mdoan4/wirehead/wirehead/Runtime.py", line 128, in watch_and_swap
+    return self.swap(generated)                          # swap
+  File "/data/users1/mdoan4/wirehead/wirehead/Runtime.py", line 102, in swap
+    print(f"Generated samples so far {generated}", flush=True)
+OSError: [Errno 5] Input/output error

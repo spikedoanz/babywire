@@ -1,0 +1,5 @@
+Error output test
+Traceback (most recent call last):
+  File "worker.py", line 80, in <module>
+    def preprocess_label(lab, label_map=LABEL_MAP):
+NameError: name 'LABEL_MAP' is not defined

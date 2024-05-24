@@ -1,0 +1,65 @@
+Error output test
+2024-05-06 18:19:00.996511: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcuda.so.1
+2024-05-06 18:19:01.139800: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1561] Found device 0 with properties: 
+pciBusID: 0000:81:00.0 name: NVIDIA A40 computeCapability: 8.6
+coreClock: 1.74GHz coreCount: 84 deviceMemorySize: 44.34GiB deviceMemoryBandwidth: 648.29GiB/s
+2024-05-06 18:19:01.140720: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudart.so.10.1
+2024-05-06 18:19:01.142650: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcublas.so.10
+2024-05-06 18:19:01.144471: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcufft.so.10
+2024-05-06 18:19:01.145015: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcurand.so.10
+2024-05-06 18:19:01.146764: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcusolver.so.10
+2024-05-06 18:19:01.147772: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcusparse.so.10
+2024-05-06 18:19:01.150974: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudnn.so.7
+2024-05-06 18:19:01.157765: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1703] Adding visible gpu devices: 0
+2024-05-06 18:19:02.761421: I tensorflow/core/platform/cpu_feature_guard.cc:143] Your CPU supports instructions that this TensorFlow binary was not compiled to use: AVX2 FMA
+2024-05-06 18:19:02.808396: I tensorflow/core/platform/profile_utils/cpu_utils.cc:102] CPU Frequency: 1996255000 Hz
+2024-05-06 18:19:02.809073: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x7ff800000b60 initialized for platform Host (this does not guarantee that XLA will be used). Devices:
+2024-05-06 18:19:02.809106: I tensorflow/compiler/xla/service/service.cc:176]   StreamExecutor device (0): Host, Default Version
+2024-05-06 18:19:02.929383: I tensorflow/compiler/xla/service/service.cc:168] XLA service 0x6f6dd70 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+2024-05-06 18:19:02.929427: I tensorflow/compiler/xla/service/service.cc:176]   StreamExecutor device (0): NVIDIA A40, Compute Capability 8.6
+2024-05-06 18:19:02.930938: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1561] Found device 0 with properties: 
+pciBusID: 0000:81:00.0 name: NVIDIA A40 computeCapability: 8.6
+coreClock: 1.74GHz coreCount: 84 deviceMemorySize: 44.34GiB deviceMemoryBandwidth: 648.29GiB/s
+2024-05-06 18:19:02.930983: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudart.so.10.1
+2024-05-06 18:19:02.930992: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcublas.so.10
+2024-05-06 18:19:02.931000: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcufft.so.10
+2024-05-06 18:19:02.931007: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcurand.so.10
+2024-05-06 18:19:02.931014: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcusolver.so.10
+2024-05-06 18:19:02.931021: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcusparse.so.10
+2024-05-06 18:19:02.931028: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudnn.so.7
+2024-05-06 18:19:02.933495: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1703] Adding visible gpu devices: 0
+2024-05-06 18:19:02.934546: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudart.so.10.1
+2024-05-06 18:19:02.936507: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1102] Device interconnect StreamExecutor with strength 1 edge matrix:
+2024-05-06 18:19:02.936523: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1108]      0 
+2024-05-06 18:19:02.936528: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1121] 0:   N 
+2024-05-06 18:19:02.939764: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1247] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 42414 MB memory) -> physical GPU (device: 0, name: NVIDIA A40, pci bus id: 0000:81:00.0, compute capability: 8.6)
+2024-05-06 18:19:08.524424: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcublas.so.10
+2024-05-06 18:23:08.883253: I tensorflow/stream_executor/platform/default/dso_loader.cc:44] Successfully opened dynamic library libcudnn.so.7
+Using TensorFlow backend.
+Traceback (most recent call last):
+  File "/home/users/mdoan4/.local/lib/python3.8/site-packages/nibabel/loadsave.py", line 100, in load
+    stat_result = os.stat(filename)
+OSError: [Errno 5] Input/output error: '/data/users1/mdoan4/babywire/babytrainingdata/labeling2_inf10_final4.nii.gz'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "worker.py", line 110, in <module>
+    wirehead_runtime.run_generator()
+  File "/data/users1/mdoan4/wirehead/wirehead/Runtime.py", line 225, in run_generator
+    self.generate_and_insert(dbw, dbc, chunksize)
+  File "/data/users1/mdoan4/wirehead/wirehead/Runtime.py", line 202, in generate_and_insert
+    data = next(self.generator)
+  File "worker.py", line 53, in create_generator
+    img, lab = preprocessing_pipe(brain_generator.generate_brain())
+  File "/data/users1/mdoan4/wirehead/dependencies/synthseg/SynthSeg/brain_generator.py", line 324, in generate_brain
+    (image, labels) = next(self.brain_generator)
+  File "/data/users1/mdoan4/wirehead/dependencies/synthseg/SynthSeg/brain_generator.py", line 319, in _build_brain_generator
+    model_inputs = next(self.model_inputs_generator)
+  File "/data/users1/mdoan4/wirehead/dependencies/synthseg/SynthSeg/model_inputs.py", line 102, in build_model_inputs
+    lab = utils.load_volume(path_label_maps[idx], dtype='int', aff_ref=np.eye(4))
+  File "/data/users1/mdoan4/wirehead/dependencies/synthseg/ext/lab2im/utils.py", line 92, in load_volume
+    x = nib.load(path_volume)
+  File "/home/users/mdoan4/.local/lib/python3.8/site-packages/nibabel/loadsave.py", line 102, in load
+    raise FileNotFoundError(f"No such file or no access: '{filename}'")
+FileNotFoundError: No such file or no access: '/data/users1/mdoan4/babywire/babytrainingdata/labeling2_inf10_final4.nii.gz'
