@@ -5,9 +5,7 @@ import os
 import easybar
 import shutil
 import pickle
-import sys
-import redis
-
+import time
 
 from catalyst import dl, metrics, utils
 from catalyst.data import BatchPrefetchLoaderWrapper
@@ -18,6 +16,7 @@ from catalyst.data.loader import ILoaderWrapper
 import ipdb
 import nibabel as nib
 import numpy as np
+from pymongo.errors import OperationFailure
 
 import torch
 from torch.optim.lr_scheduler import (
@@ -33,20 +32,21 @@ from torch.utils.data import DataLoader, Dataset, DistributedSampler
 
 from dice import faster_dice, DiceLoss
 from meshnet import enMesh_checkpoint, enMesh
-from mongoslabs.gencoords import CoordsGenerator
+from mindfultensors.gencoords import CoordsGenerator
+from mindfultensors.utils import (
+    unit_interval_normalize,
+    qnormalize,
+    DBBatchSampler,
+)
 
-from mongoslabs.mongoloader import (
+from mindfultensors.mongoloader import (
     create_client,
     collate_subcubes,
     mcollate,
-    MBatchSampler,
     MongoDataset,
     MongoClient,
     mtransform,
 )
-
-# comment here
-import wirehead as wh
 
 # SEED = 0
 # utils.set_global_seed(SEED)
@@ -54,23 +54,82 @@ import wirehead as wh
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:100"
 os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
-os.environ["NCCL_SOCKET_IFNAME"] = "ib0"
-os.environ["NCCL_P2P_LEVEL"] = "NVL"
+# os.environ["NCCL_SOCKET_IFNAME"] = "ib0"
+# os.environ["NCCL_P2P_LEVEL"] = "NVL"
 
 volume_shape = [256] * 3
 MAXSHAPE = 300
 
-LABELNOW = ["sublabel", "gwmlabel", "50label"][0]
-n_classes = [104, 3, 50][0]
+LABELFIELD = "label"
+DATAFIELD = "data"
+
+n_classes = 18
 
 MONGOHOST = "10.245.12.58"  # "arctrdcn018.rs.gsu.edu"
-DBNAME = "MindfulTensors"
-COLLECTION = "MRNslabs"
-INDEX_ID = "subject"
-VIEWFIELDS = ["subdata", LABELNOW, "id", "subject"]
+DBNAME = "babywire_test"
+COLLECTION = "read"
+INDEX_ID = "id"
 config_file = "modelAE.json"
 
-# COLLECTION = "HCP"
+
+def merge_homologs(label, device):
+    max_value = 31
+    idx = torch.arange(max_value + 1, dtype=torch.long).to(device)
+    idx[31] = 17
+    idx[30] = 16
+    idx[29] = 15
+    idx[28] = 14
+    idx[27] = 10
+    idx[26] = 9
+    idx[25] = 8
+    idx[24] = 7
+    idx[23] = 6
+    idx[22] = 5
+    idx[21] = 4
+    idx[20] = 3
+    idx[19] = 2
+    idx[18] = 1
+    # return the corresponding values from idx
+    return idx[label.long()]
+
+
+class WireMongoDataset(MongoDataset):
+    def __init__(self, *args, keeptrying=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.keeptrying = keeptrying  # Initialize the keeptrying attribute
+
+    def retry_on_eof_error(retry_count, verbose=False):
+        def decorator(func):
+            def wrapper(self, batch, *args, **kwargs):
+                myException = Exception  # Default Exception if not overwritten
+                for attempt in range(retry_count):
+                    try:
+                        return func(self, batch, *args, **kwargs)
+                    except (
+                        EOFError,
+                        OperationFailure,
+                    ) as e:  # Specifically catching EOFError
+                        if self.keeptrying:
+                            if verbose:
+                                print(
+                                    f"EOFError caught. Retrying {attempt+1}/{retry_count}"
+                                )
+                            time.sleep(1)
+                            myException = e
+                            continue
+                        else:
+                            raise e
+                raise myException("Failed after multiple retries.")
+
+            return wrapper
+
+        return decorator
+
+    @retry_on_eof_error(retry_count=3, verbose=True)
+    def __getitem__(self, batch):
+        # Directly use the parent class's __getitem__ method
+        # The decorator will handle exceptions
+        return super().__getitem__(batch)
 
 
 # CustomRunner – PyTorch for-loop decomposition
@@ -85,11 +144,11 @@ class CustomRunner(dl.Runner):
         n_channels: int,
         n_classes: int,
         n_epochs: int,
-        optimize_inline: bool,
-        validation_percent: float,
+        optimize_inline: bool,        validation_percent: float,
         onecycle_lr: float,
         rmsprop_lr: float,
-        batch_size: int,
+        num_subcubes: int,
+        num_volumes: int,
         client_creator,
         off_brain_weight: float,
         prefetches=8,
@@ -101,22 +160,22 @@ class CustomRunner(dl.Runner):
     ):
         super().__init__()
         self._logdir = logdir
-        self.model_path = model_path
         self.wandb_project = wandb_project
         self.wandb_experiment = wandb_experiment
+        self.model_path = model_path
         self.n_channels = n_channels
         self.n_classes = n_classes
-        self.n_epochs = n_epochs
         self.optimize_inline = optimize_inline
-        self.validation_percent = validation_percent
         self.onecycle_lr = onecycle_lr
         self.rmsprop_lr = rmsprop_lr
+        self.prefetches = prefetches
         self.db_host = db_host
         self.db_name = db_name
         self.db_collection = db_collection
-        self.prefetches = prefetches
         self.shape = subvolume_shape[0]
-        self.batch_size = batch_size
+        self.num_subcubes = num_subcubes
+        self.num_volumes = num_volumes
+        self.n_epochs = n_epochs
         self.off_brain_weight = off_brain_weight
         self.client_creator = client_creator
         self.funcs = None
@@ -180,89 +239,38 @@ class CustomRunner(dl.Runner):
 
         client = MongoClient("mongodb://" + self.db_host + ":27017")
         db = client[self.db_name]
-        posts = db[self.db_collection]
-#        num_examples = int(posts.find_one(sort=[(INDEX_ID, -1)])[INDEX_ID] + 1)
+        posts = db[self.db_collection + ".bin"]
+        num_examples = int(posts.find_one(sort=[(INDEX_ID, -1)])[INDEX_ID] + 1)
 
-# remember here
-        # Wirehead code sub in####
-
-        # Basic collate and transform functions that do pretty much nothing
-
-
-        def mcollate(mlist, labelname="sublabel", cubesize=256):
-            mdict = list2dict(mlist[0])
-            data = []
-            labels = []
-            data = torch.empty(
-                len(mdict), cubesize, cubesize, cubesize, requires_grad=False, dtype=torch.float
-            )
-            labels = torch.empty(
-                len(mdict), cubesize, cubesize, cubesize, requires_grad=False, dtype=torch.long
-            )
-            cube = np.empty(shape=(cubesize, cubesize, cubesize))
-            label = np.empty(shape=(cubesize, cubesize, cubesize))
-            for i, subj in enumerate(mdict):
-                for sub in mdict[subj]:
-                    x, y, z = sub["coords"]
-                    sz = sub["subdata"].shape[0]
-                    cube[x : x + sz, y : y + sz, z : z + sz] = sub["subdata"]
-                    label[x : x + sz, y : y + sz, z : z + sz] = sub[labelname]
-                cube1 = preprocess_image(torch.from_numpy(cube).float())
-                label1 = torch.from_numpy(label).long()
-                data[i, :, :, :] = cube1
-                labels[i, :, :, :] = label1
-            del cube
-            del label
-            return data.unsqueeze(1), labels
-        def rcollate(batch, cubesize=256):
-            data = []
-            labels = []
-            data = torch.empty(
-                len(batch), cubesize, cubesize, cubesize, requires_grad=False, dtype=torch.float
-            )
-            labels = torch.empty(
-                len(batch), cubesize, cubesize, cubesize, requires_grad=False, dtype=torch.long
-            )
-
-            items = batch[0] # Wirehead will only fetch with batchsize 1
-            cube1 = torch.from_numpy(items[0]).float()
-            label1 = torch.from_numpy(items[1]).long()
-            data[0, :, :, :] = cube1
-            labels[0, :, :, :] = label1
-            return data.unsqueeze(1), labels
-
-
-            
-        def my_transform(x):
-            return x
-        def my_collate_fn(batch):
-            item = batch[0]
-            img = item[0]
-            lab = item[1]
-            # Add channel dimension (assuming single-channel data)
-            img = torch.tensor(img)[None, ...]  # Shape becomes (1, 256, 256, 256)
-            lab = torch.tensor(lab)[None, ...]  # Shape becomes (1, 256, 256, 256)
-            # Stack along a new batch dimension
-            batched_data = torch.stack([img, lab], dim=0)  # Shape becomes (2, 1, 256, 256, 256)
-            return batched_data
-
-        tdataset = wh.Dataloader(transform=my_transform, num_samples = 100) #modified
+        tdataset = WireMongoDataset(
+            range(num_examples),
+            self.funcs["mytransform"],
+            None,
+            (DATAFIELD, LABELFIELD),
+            normalize=qnormalize,
+            id=INDEX_ID,
+        )
 
         tsampler = (
-            MBatchSampler(tdataset, batch_size=1)
+            DistributedSamplerWrapper(
+                DBBatchSampler(tdataset, batch_size=self.num_volumes)
+            )
+            if self.engine.is_ddp
+            else DBBatchSampler(tdataset, batch_size=self.num_volumes)
         )
+
         tdataloader = BatchPrefetchLoaderWrapper(
             DataLoader(
                 tdataset,
-                #sampler=tsampler,
-                collate_fn=rcollate, #modifed
+                sampler=tsampler,
+                collate_fn=self.collate,
                 pin_memory=True,
-                worker_init_fn=self.funcs["createclient"], #modified 
+                worker_init_fn=self.funcs["createclient"],
                 persistent_workers=True,
                 prefetch_factor=3,
-                num_workers=3, #modified
+                num_workers=self.prefetches,
             ),
-            num_prefetches=12, #modified
+            num_prefetches=self.prefetches,
         )
 
         return {"train": tdataloader}
@@ -289,6 +297,22 @@ class CustomRunner(dl.Runner):
         class_weight = torch.FloatTensor(
             [self.off_brain_weight] + [1.0] * (self.n_classes - 1)
         ).to(self.engine.device)
+        ce_criterion = torch.nn.CrossEntropyLoss(
+            weight=class_weight, label_smoothing=0.01
+        )
+        dice_criterion = DiceLoss()
+
+        def combined_loss(output, target):
+            ce_loss = ce_criterion(output, target)
+            dice_loss = dice_criterion(output, target)
+            return 0.7 * ce_loss + 0.3 * dice_loss
+
+        return combined_loss
+
+    def get_criterion_(self):
+        class_weight = torch.FloatTensor(
+            [self.off_brain_weight] + [1.0] * (self.n_classes - 1)
+        ).to(self.engine.device)
         criterion = torch.nn.CrossEntropyLoss(
             weight=class_weight, label_smoothing=0.01
         )
@@ -306,7 +330,7 @@ class CustomRunner(dl.Runner):
             max_lr=self.onecycle_lr,
             div_factor=100,
             pct_start=0.2,
-            epochs=self.n_epochs,
+            epochs=self.num_epochs,
             steps_per_epoch=len(self.loaders["train"]),
         )
         return scheduler
@@ -314,7 +338,7 @@ class CustomRunner(dl.Runner):
     def get_callbacks(self):
         checkpoint_params = {"save_best": True, "metric_key": "macro_dice"}
         if self.model_path:
-            checkpoint_params = {"resume_model": self.model_path}
+            checkpoint_params.update({"resume_model": self.model_path})
         return {
             "checkpoint": dl.CheckpointCallback(
                 self._logdir, **checkpoint_params
@@ -346,7 +370,10 @@ class CustomRunner(dl.Runner):
     def handle_batch(self, batch):
         # unpack the batch
         sample, label = batch
-
+        label = merge_homologs(label, self.engine.device)
+        # np.save("labels.npy", label.cpu().numpy())
+        # np.save("input.npy", sample.cpu().numpy())
+        # stop
         # run model forward/backward pass
         if self.model.training:
             if self.shape > MAXSHAPE:
@@ -394,7 +421,7 @@ class CustomRunner(dl.Runner):
 
         for key in ["loss", "macro_dice", "learning rate"]:
             self.meters[key].update(
-                self.batch_metrics[key].item(), self.batch_size
+                self.batch_metrics[key].item(), self.num_volumes
             )
 
         del sample
@@ -406,14 +433,13 @@ class CustomRunner(dl.Runner):
 
 
 class ClientCreator:
-    def __init__(self, dbname, mongohost, label, volume_shape=[256] * 3):
+    def __init__(self, dbname, mongohost, volume_shape=[256] * 3):
         self.dbname = dbname
         self.mongohost = mongohost
         self.volume_shape = volume_shape
-        self.label = label
         self.subvolume_shape = None
         self.collection = None
-        self.batch_size = None
+        self.num_subcubes = None
 
     def set_shape(self, shape):
         self.subvolume_shape = shape
@@ -424,8 +450,8 @@ class ClientCreator:
     def set_collection(self, collection):
         self.collection = collection
 
-    def set_batch_size(self, batch_size):
-        self.batch_size = batch_size
+    def set_num_subcubes(self, num_subcubes):
+        self.num_subcubes = num_subcubes
 
     def create_client(self, x):
         return create_client(
@@ -439,15 +465,14 @@ class ClientCreator:
         return collate_subcubes(
             x,
             self.coord_generator,
-            labelname=self.label,
-            samples=self.batch_size,
+            samples=self.num_subcubes,
         )
 
     def mycollate_full(self, x):
-        return mcollate(x, labelname=self.label)
+        return mcollate(x)
 
     def mytransform(self, x):
-        return mtransform(x, label=self.label)
+        return mtransform(x)
 
 
 def assert_equal_length(*args):
@@ -461,27 +486,30 @@ if __name__ == "__main__":
     validation_percent = 0.1
     optimize_inline = False
 
-    model_channels = 15
-    model_label = "_startLARGE"
+    model_channels = 30
+    model_label = "_ss"
 
-    model_path = f""
-    logdir = f"./logs/tmp/curriculum_enmesh_{model_channels}channels_3_nodo/"
-    wandb_project = f"curriculum_{model_channels}_sub"
+    #model_path = f"./logs/tmp/curriculum_enmesh_{model_channels}channels_ss/model.last.pth"
+    model_path = ""
+    logdir = f"./logs/tmp/curriculum_enmesh_{model_channels}channels_ss/"
+    wandb_project = f"curriculum_{model_channels}_ss"
 
-    client_creator = ClientCreator(DBNAME, MONGOHOST, LABELNOW)
+    client_creator = ClientCreator(DBNAME, MONGOHOST)
 
     # set up parameters of your experiment
-    cubesizes = [256] * 6
-    batchsize = [1] * 6
-    weights = [0.5] * 2 + [1] * 4  # weights for the 0-class
-    collections = ["HCP", "MRNslabs"] * 3
-    epochs = [50] * 2 + [100] * 2 + [50, 10]
-    prefetches = [24] * 6
-    attenuates = [1] * 6
+    cubesizes = [128] + [192, 256] * 10
+    numcubes = [4] + [1, 1] * 10
+    numvolumes = [1] + [1, 1] * 10
+    weights = [0.5] + [1] * 20  # weights for the 0-class
+    collections = ["read"] * 21
+    epochs = [10] + [10, 10] * 10
+    prefetches = [24] * 21
+    attenuates = [1] * 21
 
     assert_equal_length(
         cubesizes,
-        batchsize,
+        numcubes,
+        numvolumes,
         weights,
         collections,
         epochs,
@@ -492,12 +520,13 @@ if __name__ == "__main__":
     start_experiment = 0
     for experiment in range(len(cubesizes)):
         COLLECTION = collections[experiment]
-        batch_size = batchsize[experiment]
+        num_subcubes = numcubes[experiment]
+        num_volumes = numvolumes[experiment]
 
         off_brain_weight = weights[experiment]
         subvolume_shape = [cubesizes[experiment]] * 3
         onecycle_lr = rmsprop_lr = (
-            attenuates[experiment] * 0.1 * 8 * batch_size / 256
+            attenuates[experiment] * 0.05 * 8 * num_subcubes * num_volumes / 256
         )
         n_epochs = epochs[experiment]
         n_fetch = prefetches[experiment]
@@ -511,7 +540,7 @@ if __name__ == "__main__":
 
         # Set database parameters
         client_creator.set_collection(COLLECTION)
-        client_creator.set_batch_size(batch_size)
+        client_creator.set_num_subcubes(num_subcubes)
         client_creator.set_shape(subvolume_shape)
 
         runner = CustomRunner(
@@ -526,7 +555,8 @@ if __name__ == "__main__":
             validation_percent=validation_percent,
             onecycle_lr=onecycle_lr,
             rmsprop_lr=rmsprop_lr,
-            batch_size=batch_size,
+            num_subcubes=num_subcubes,
+            num_volumes=num_volumes,
             client_creator=client_creator,
             off_brain_weight=off_brain_weight,
             prefetches=n_fetch,
