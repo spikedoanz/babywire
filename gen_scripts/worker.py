@@ -122,7 +122,7 @@ if __name__ == "__main__":
     wirehead_runtime    = Runtime(
         db = db,                    # Specify mongohost
         generator = brain_generator,# Specify generator 
-        cap = 10,
+        cap = 100,
     )
     if is_first_job():
         wirehead_runtime.run_manager()
