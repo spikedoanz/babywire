@@ -12,8 +12,30 @@ client              = MongoClient("mongodb://" + MONGOHOST + ":27017")
 db                  = client[DBNAME]
 
 PATH_TO_DATA        = "/data/users1/mdoan4/babywire/babytrainingdata/"
-DATA_FILES          = ["labeling2_inf10_final4.nii.gz"] # this is where you slap on more samples
+DATA_FILES          = ["labeling2_inf10_final5.nii.gz",
+                       "labeling2_inf12_final5.nii.gz",
+                       "labeling2_inf9_final5.nii.gz", 
+                       "labeling2_inf11_final5.nii.gz",
+                       "labeling2_inf7_final5.nii.gz",
+                    ] # this is where you slap on more samples
 PATH_TO_SYNTHSEG    = '/data/users1/mdoan4/wirehead/dependencies/synthseg'
+
+LABEL_MAP = np.asarray(
+    [0, 0, 1, 2, 3, 4, 0, 5, 6, 0, 7, 8, 9, 10]
+    + [11, 12, 13, 14, 15]
+    + [0] * 6
+    + [1, 16, 0, 17]
+    + [0] * 12
+    + [18, 19, 20, 21, 0, 22, 23]
+    + [0, 24, 25, 26, 27, 28, 29, 0, 0, 18, 30, 0, 31]
+    + [0] * 75
+    + [3, 4]
+    + [0] * 25
+    + [20, 21]
+    + [0] * 366,
+    dtype="int",
+).astype(np.uint8)
+
 
 def hardware_setup():
     """ Clean slate to set up your hardware, ignore if none are needed """
@@ -29,22 +51,6 @@ def hardware_setup():
     pass
 
 def preprocess_label(lab, label_map=LABEL_MAP):
-    # Synthseg config
-    LABEL_MAP = np.asarray(
-        [0, 0, 1, 2, 3, 4, 0, 5, 6, 0, 7, 8, 9, 10]
-        + [11, 12, 13, 14, 15]
-        + [0] * 6
-        + [1, 16, 0, 17]
-        + [0] * 12
-        + [18, 19, 20, 21, 0, 22, 23]
-        + [0, 24, 25, 26, 27, 28, 29, 0, 0, 18, 30, 0, 31]
-        + [0] * 75
-        + [3, 4]
-        + [0] * 25
-        + [20, 21]
-        + [0] * 366,
-        dtype="int",
-    ).astype(np.uint8)
     return label_map[lab]
 
 def preprocess_image_min_max(img: np.ndarray) -> np.ndarray:
