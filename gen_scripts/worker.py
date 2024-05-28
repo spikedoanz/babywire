@@ -83,6 +83,7 @@ def preprocessing_pipe(data):
     img = img.astype(np.uint8)
     lab = preprocess_label(lab)
     lab = merge_homologs(lab)
+    lab = lab.astype(np.unint8)
     return (img, lab) 
 
 def hardware_setup():
@@ -99,7 +100,7 @@ def hardware_setup():
     pass
 
 def preprocess_label(lab, label_map=LABEL_MAP):
-    return label_map[lab.astype(np.uint8)]
+    return label_map[lab]
 
 def preprocess_image_min_max(img: np.ndarray) -> np.ndarray:
     "Min max scaling preprocessing for the range 0..1"
