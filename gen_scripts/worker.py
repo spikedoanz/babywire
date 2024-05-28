@@ -11,22 +11,46 @@ MONGOHOST           = "arctrdcn018.rs.gsu.edu"
 client              = MongoClient("mongodb://" + MONGOHOST + ":27017")
 db                  = client[DBNAME]
 
-# Synthseg config
-LABEL_MAP = np.asarray(
-    [0, 0, 1, 2, 3, 4, 0, 5, 6, 0, 7, 8, 9, 10]
-    + [11, 12, 13, 14, 15]
-    + [0] * 6
-    + [1, 16, 0, 17]
-    + [0] * 12
-    + [18, 19, 20, 21, 0, 22, 23]
-    + [0, 24, 25, 26, 27, 28, 29, 0, 0, 18, 30, 0, 31]
-    + [0] * 75
-    + [3, 4]
-    + [0] * 25
-    + [20, 21]
-    + [0] * 366,
-    dtype="int",
-).astype(np.uint8)
+PATH_TO_DATA        = "/data/users1/mdoan4/babywire/babytrainingdata/"
+DATA_FILES          = ["labeling2_inf10_final4.nii.gz"] # this is where you slap on more samples
+PATH_TO_SYNTHSEG    = '/data/users1/mdoan4/wirehead/dependencies/synthseg'
+
+def hardware_setup():
+    """ Clean slate to set up your hardware, ignore if none are needed """
+    import tensorflow as tf
+    gpus = tf.config.experimental.list_physical_devices("GPU")
+    if gpus:
+        try:
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+        except RuntimeError as e:
+            print(e)
+    sys.path.append(PATH_TO_SYNTHSEG)
+    pass
+
+def preprocess_label(lab, label_map=LABEL_MAP):
+    # Synthseg config
+    LABEL_MAP = np.asarray(
+        [0, 0, 1, 2, 3, 4, 0, 5, 6, 0, 7, 8, 9, 10]
+        + [11, 12, 13, 14, 15]
+        + [0] * 6
+        + [1, 16, 0, 17]
+        + [0] * 12
+        + [18, 19, 20, 21, 0, 22, 23]
+        + [0, 24, 25, 26, 27, 28, 29, 0, 0, 18, 30, 0, 31]
+        + [0] * 75
+        + [3, 4]
+        + [0] * 25
+        + [20, 21]
+        + [0] * 366,
+        dtype="int",
+    ).astype(np.uint8)
+    return label_map[lab]
+
+def preprocess_image_min_max(img: np.ndarray) -> np.ndarray:
+    "Min max scaling preprocessing for the range 0..1"
+    img = (img - img.min()) / (img.max() - img.min())
+    return img
 
 def merge_homologs(label):#, device):
     max_value = 31
@@ -49,12 +73,6 @@ def merge_homologs(label):#, device):
     # return the corresponding values from idx
     return idx[label]
 
-PATH_TO_DATA        = "/data/users1/mdoan4/babywire/babytrainingdata/"
-DATA_FILES          = ["labeling2_inf10_final4.nii.gz"] # this is where you slap on more samples
-PATH_TO_SYNTHSEG    = '/data/users1/mdoan4/wirehead/dependencies/synthseg'
-
-
-# Create a generator function that yields desired samples
 def create_generator(task_id, training_seg=None):
     """ Creates an iterator that returns data for mongo.
         Should contain all the dependencies of the brain generator
@@ -83,29 +101,8 @@ def preprocessing_pipe(data):
     img = img.astype(np.uint8)
     lab = preprocess_label(lab)
     lab = merge_homologs(lab)
-    lab = lab.astype(np.unint8)
+    lab = lab.astype(np.uint8)
     return (img, lab) 
-
-def hardware_setup():
-    """ Clean slate to set up your hardware, ignore if none are needed """
-    import tensorflow as tf
-    gpus = tf.config.experimental.list_physical_devices("GPU")
-    if gpus:
-        try:
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-        except RuntimeError as e:
-            print(e)
-    sys.path.append(PATH_TO_SYNTHSEG)
-    pass
-
-def preprocess_label(lab, label_map=LABEL_MAP):
-    return label_map[lab]
-
-def preprocess_image_min_max(img: np.ndarray) -> np.ndarray:
-    "Min max scaling preprocessing for the range 0..1"
-    img = (img - img.min()) / (img.max() - img.min())
-    return img
 
 # Extras
 def my_task_id() -> int:
@@ -115,8 +112,8 @@ def my_task_id() -> int:
     )  # Default to '0' if not running under Slurm
     return int(task_id)
 
-# Function to check if this is the first job based on SLURM_ARRAY_TASK_ID
 def is_first_job():
+    # Function to check if this is the first job based on SLURM_ARRAY_TASK_ID
     return my_task_id() == 0
 
 if __name__ == "__main__":
@@ -129,8 +126,8 @@ if __name__ == "__main__":
     )
     if is_first_job():
         wirehead_runtime.run_manager()
+
+        print("Manager terminated")
     else:
         wirehead_runtime.run_generator()
-
-
-    print(0)
+        print("Generator terminated")
